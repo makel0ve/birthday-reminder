@@ -3,5 +3,5 @@
 
 <h1>Использование</h1>
 Для работы проект необходимо установить PostgreSQL (я использовал 15.7)
-Ссылка для скачивание [PostgreSQL](https://www.enterprisedb.com/downloads/postgres-postgresql-downloads)
+Ссылка для скачивание [PostgreSQL] (https://www.enterprisedb.com/downloads/postgres-postgresql-downloads)
 
