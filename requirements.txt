@@ -1,0 +1,6 @@
+greenlet==3.0.3
+psycopg2==2.9.9
+SQLAlchemy==2.0.31
+typing_extensions==4.12.2
+win11toast==0.35
+winsdk==1.0.0b10
