@@ -1,2 +1,4 @@
 Пример ввода данных:
-Иван 05.08.1990 https://www.python.org/
+Иван 15.03.1995 https://t.me/example_ivan
+Мария 06.04.2000 https://vk.com/example_maria
+Алексей 21.12.1998 https://t.me/example_alexey

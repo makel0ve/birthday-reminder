@@ -1,102 +1,89 @@
-from datetime import datetime
+from datetime import datetime, date
 
-from sqlalchemy import create_engine, extract
+from sqlalchemy import create_engine, extract, text
 from sqlalchemy.orm import Session
-import psycopg2
+from sqlalchemy.exc import IntegrityError, ProgrammingError
 
 from models import Person, Base
+from config import DATABASE_URL, DB_USER, DB_PASSWORD, DB_HOST, DB_PORT
 
 
-def create_database():
-    conn = psycopg2.connect(dbname="postgres", user="postgres", password="admin", host="127.0.0.1")
-    cursor = conn.cursor()
-    conn.autocommit = True
-    sql = "CREATE DATABASE birthday_reminder_db"
+def create_database(db_name: str = "birthday_reminder_db") -> None:
+    """Создаёт базу данных, если она ещё не существует."""
+
+    maintenance_url = (
+        f"postgresql+psycopg2://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/postgres"
+    )
+    engine = create_engine(maintenance_url, isolation_level="AUTOCOMMIT")
+
     try:
-        cursor.execute(sql)
-        cursor.close()
-        conn.close()
-    except:
-        return
- 
-    
-def calculate_age(birthday):
-    now = datetime.now().date()
-    birthday_date = datetime.strptime(birthday, "%d.%m.%Y")
-    age = now.year - birthday_date.year - ((now.month, now.day) < (birthday_date.month, birthday_date.day))
-    if birthday_date.month == 2 and birthday_date.day == 29:
-        try:
-            leap_year_birthday = birthday_date.replace(year=now.year)
-        except ValueError:
-            leap_year_birthday = birthday_date.replace(year=now.year, day=28)
+        with engine.connect() as conn:
+            conn.execute(text(f"CREATE DATABASE {db_name}"))
 
-        if now < leap_year_birthday:
-            age -= 1
-    return age
-    
+    except ProgrammingError:
+        pass
 
-def create(session, data):
-    with session as db:
-        age = calculate_age(data[1])
-        birthday_date = datetime.strptime(data[1], "%d.%m.%Y").date()
+    finally:
+        engine.dispose()
 
-        p = Person(name=data[0], 
-                birthday=birthday_date, 
-                age=age, 
-                social_media=data[2])
-        
-        try:
-            db.add(p)
-            db.commit()
-        except:
-            return
-    
-    
-def read(session):
-    with session as db:
-        now = datetime.now()
-        people = db.query(Person).filter(extract('month', Person.birthday) == now.month, 
-                                         extract('day', Person.birthday) == now.day).all()
-        
-        return people
-   
-   
-def update(session, value):
-    with session as db:
-        person = db.query(Person).filter(Person.social_media == value).first()
-        if person:
-            print(f"Введите данные для обновления записи человека\n{person.name} \
-                  {person.birthday} \
-                  {person.age} \
-                  {person.social_media}")
-            print("Имя")
-            person.name = input()
-            print("День рождения в формате ДД.ММ.ГГГГ")
-            birthday_date = input()
-            person.birthday = birthday_date
-            person.age = calculate_age(birthday_date)
-            print("Социальная сеть")
-            person.social_media = input()
 
-            db.commit()
-            
-            
-def delete(session, value):
-    with session as db:
-        person = db.query(Person).filter(Person.social_media == value).first()
-        if person:
-            print(f"Вы уверены, что хотите удалить запись {person.name} {person.birthday} {person.age} {person.social_media} из базы данных (Y/N)?")
-            if input() == "Y":
-                db.delete(person)
-                db.commit()
-                print("Запись была удалена")
-            else:
-                print("Запись не была удалена")
-                
+def connect_db() -> Session:
+    """Создаёт подключение к БД и возвращает сессию."""
 
-def connect_db():
-    engine = create_engine("postgresql+psycopg2://postgres:admin@localhost:5432/birthday_reminder_db")
-    session = Session(autoflush=False, bind=engine)
+    engine = create_engine(DATABASE_URL)
     Base.metadata.create_all(bind=engine)
+
+    return Session(autoflush=False, bind=engine)
+
+
+def load_from_file(session: Session, filepath: str) -> None:
+    """
+    Загружает данные о людях из текстового файла.
+
+    Формат строки: Имя ДД.ММ.ГГГГ ссылка_на_соцсеть
+    """
+
+    with open(filepath, "r", encoding="utf-8") as f:
+        for line in f:
+            parts = line.strip().split()
+
+            if len(parts) < 3:
+                continue
+
+            add_person(session, name=parts[0], birthday_str=parts[1], social_media=parts[2])
+
+
+def add_person(session: Session, name: str, birthday_str: str, social_media: str) -> None:
+    """Добавляет человека в БД. Пропускает дубликаты."""
+
+    try:
+        birthday_date = datetime.strptime(birthday_str, "%d.%m.%Y").date()
+
+    except ValueError:
+        print(f"Некорректная дата: {birthday_str}")
+
+        return
+
+    person = Person(name=name, birthday=birthday_date, social_media=social_media)
+
+    try:
+        session.add(person)
+        session.commit()
+
+    except IntegrityError:
+        session.rollback()
+
+
+def get_todays_birthdays(session: Session) -> list[Person]:
+    """Возвращает список людей, у которых сегодня день рождения."""
+
+    today = date.today()
     
-    return session
+    return (
+        session.query(Person)
+        .filter(
+            extract("month", Person.birthday) == today.month,
+            extract("day", Person.birthday) == today.day,
+        )
+        .all()
+    )
